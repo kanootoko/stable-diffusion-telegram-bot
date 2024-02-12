@@ -1,9 +1,9 @@
 # Stable Diffusion Telegram Bot
 
 This is a Telegram Bot frontend for rendering images with
-[Stable Diffusion](https://github.com/AUTOMATIC1111/stable-diffusion-webui/).
+[Stable Diffusion AUTOMATIC1111 API](https://github.com/AUTOMATIC1111/stable-diffusion-webui/).
 
-<p align="center"><img src="demo.gif?raw=true"/></p>
+<p align="center"><img src="resources/demo.gif?raw=true"/></p>
 
 The bot displays the progress and further information during processing by
 responding to the message with the prompt. Requests are queued, only one gets
@@ -19,9 +19,8 @@ to run on other operating systems.
 You'll need Go installed on your computer. Install a recent package of `golang`.
 Then:
 
-```
-go get github.com/nonoo/stable-diffusion-telegram-bot
-go install github.com/nonoo/stable-diffusion-telegram-bot
+```shell
+go install github.com/kanootoko/stable-diffusion-telegram-bot@latest
 ```
 
 This will typically install `stable-diffusion-telegram-bot` into `$HOME/go/bin`.
@@ -39,8 +38,7 @@ You can get the available command line arguments with `-h`.
 Mandatory arguments are:
 
 - `-bot-token`: set this to your Telegram bot's `token`
-- `-sd-webui-path`: set this to the path of webui start script from the Stable
-  Diffusion directory
+- `-sd-api`: set the address of running Stable Diffusion AUTOMATIC1111 API
 
 Set your Telegram user ID as an admin with the `-admin-user-ids` argument.
 Admins will get a message when the bot starts.
@@ -71,20 +69,23 @@ variable. Available OS environment variables are:
 ## Supported commands
 
 - `/sd` - render images using supplied prompt
-- `/sdcancel` - cancel ongoing request
-- `/sdmodels` - list available models
-- `/sdsamplers` - list available samplers
-- `/sdembeddings` - list available embeddings
-- `/sdloras` - list available LoRAs
-- `/sdupscalers` - list available upscalers
-- `/sdvaes` - list available VAEs
-- `/sdsmi` - get the output of nvidia-smi
-- `/sdhelp` - print help
+- `/cancel` - cancel ongoing request
+- `/models` - list available models
+- `/samplers` - list available samplers
+- `/embeddings` - list available embeddings
+- `/loras` - list available LoRAs
+- `/upscalers` - list available upscalers
+- `/vaes` - list available VAEs
+- `/smi` - get the output of nvidia-smi
+- `/help` - print help
 
 You can also use the `!` command character instead of `/`.
 
 You don't need to enter the `/sd` command if you send a prompt to the bot using
 a private chat.
+
+You can set commands promts from Telegram using BotFather by feeding it with
+[commands file](./resources/commands.txt) content.
 
 ### Setting render parameters
 
@@ -94,16 +95,17 @@ You can use the following `-attr val` assignments at the end of the prompt:
 - `-width/w` - set output image width
 - `-height/h` - set output image height
 - `-steps/t` - set the number of steps
-- `-outcnt/o` - set count of output images
+- `-cnt/o` - set count of output images
+- `-batch/b` - set batch size of output images
 - `-png` - upload PNGs instead of JPEGs
 - `-cfg/c` - set CFG scale
-- `-sampler/r` - set sampler, get valid values with `/sdsamplers`
-- `-model/m` - set model, get valid values with `/sdmodels`
+- `-sampler/r` - set sampler, get valid values with `/samplers`
+- `-model/m` - set model, get valid values with `/models`
 - `-upscale/u` - upscale output image with ratio
-- `-upscaler` - set upscaler method, get valid values with `/sdupscalers`
+- `-upscaler` - set upscaler method, get valid values with `/upscalers`
 - `-hr` - enable highres mode and set upscale ratio
 - `-hr-denoisestrength/hrd` - set highres mode denoise strength
-- `-hr-upscaler/hru` - set highres mode upscaler, get valid values with `/sdupscalers`
+- `-hr-upscaler/hru` - set highres mode upscaler, get valid values with `/upscalers`
 - `-hr-steps/hrt` - set the number of highres mode second pass steps
 
 Example prompt with attributes: `laughing santa with beer -s 1 -o 1`
@@ -117,9 +119,6 @@ tree -s 1 -o 1
 If you need to use spaces in sampler and upscaler names, then enclose them
 in double quotes.
 
-The default resolution is 512x512. If the currently used model's name ends with "sdxl"
-then the bot increases the resolution to 1024.
-
-## Donations
-
-If you find this bot useful then [buy me a beer](https://paypal.me/ha2non). :)
+The default resolution is 512x512. If the currently used model's name contains "xl" as
+case-insensitive substring then the bot increases the resolution to the other one
+(default is 1024x1024).

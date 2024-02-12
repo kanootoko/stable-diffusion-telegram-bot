@@ -14,8 +14,6 @@ import (
 )
 
 var telegramBot *bot.Bot
-var cmdHandler cmdHandlerType
-var sdAPI sdAPIType
 var reqQueue ReqQueue
 
 func sendReplyToMessage(ctx context.Context, replyToMsg *models.Message, s string) (msg *models.Message) {
@@ -23,6 +21,7 @@ func sendReplyToMessage(ctx context.Context, replyToMsg *models.Message, s strin
 	msg, err = telegramBot.SendMessage(ctx, &bot.SendMessageParams{
 		ReplyToMessageID: replyToMsg.ID,
 		ChatID:           replyToMsg.Chat.ID,
+		ParseMode:        models.ParseModeHTML,
 		Text:             s,
 	})
 	if err != nil {
@@ -31,8 +30,8 @@ func sendReplyToMessage(ctx context.Context, replyToMsg *models.Message, s strin
 	return
 }
 
-func sendTextToAdmins(ctx context.Context, s string) {
-	for _, chatID := range params.AdminUserIDs {
+func sendTextToAdmins(ctx context.Context, adminUserIds []int64, s string) {
+	for _, chatID := range adminUserIds {
 		_, _ = telegramBot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   s,
@@ -45,14 +44,14 @@ type ImageFileData struct {
 	filename string
 }
 
-func handleImage(ctx context.Context, update *models.Update, fileID, filename string) {
+func handleImage(ctx context.Context, botToken string, update *models.Update, fileID, filename string) {
 	// Are we expecting image data from this user?
 	if reqQueue.currentEntry.gotImageChan == nil || update.Message.From.ID != reqQueue.currentEntry.entry.Message.From.ID {
 		return
 	}
 
 	var g GetFile
-	d, err := g.GetFile(ctx, fileID)
+	d, err := g.GetFile(ctx, botToken, fileID)
 	if err != nil {
 		reqQueue.currentEntry.entry.sendReply(ctx, errorStr+": can't get file: "+err.Error())
 		return
@@ -68,138 +67,174 @@ func handleImage(ctx context.Context, update *models.Update, fileID, filename st
 	}
 }
 
-func handleMessage(ctx context.Context, update *models.Update) {
-	if update.Message.Text == "" {
-		return
-	}
-
-	fmt.Print("msg from ", update.Message.From.Username, "#", update.Message.From.ID, ": ", update.Message.Text, "\n")
-
-	if update.Message.Chat.ID >= 0 { // From user?
-		if !slices.Contains(params.AllowedUserIDs, update.Message.From.ID) {
-			fmt.Println("  user not allowed, ignoring")
+func getHandleMessageFunction(params paramsType, cmdHandler *cmdHandlerType) func(context.Context, *models.Update) {
+	handleMessage := func(ctx context.Context, update *models.Update) {
+		if update.Message.Text == "" {
 			return
 		}
-	} else { // From group ?
-		fmt.Print("  msg from group #", update.Message.Chat.ID)
-		if !slices.Contains(params.AllowedGroupIDs, update.Message.Chat.ID) {
-			fmt.Println(", group not allowed, ignoring")
-			return
-		}
-		fmt.Println()
-	}
 
-	// Check if message is a command.
-	if update.Message.Text[0] == '/' || update.Message.Text[0] == '!' {
-		cmd := strings.Split(update.Message.Text, " ")[0]
-		if strings.Contains(cmd, "@") {
-			cmd = strings.Split(cmd, "@")[0]
+		fmt.Print("msg from ", update.Message.From.Username, "#", update.Message.From.ID, ": ", update.Message.Text, "\n")
+
+		if update.Message.Chat.ID >= 0 { // From user?
+			if !slices.Contains(params.AllowedUserIDs, update.Message.From.ID) {
+				fmt.Println("  user not allowed, ignoring")
+				return
+			}
+		} else { // From group ?
+			fmt.Print("  msg from group #", update.Message.Chat.ID)
+			if !slices.Contains(params.AllowedGroupIDs, update.Message.Chat.ID) {
+				fmt.Println(", group not allowed, ignoring")
+				return
+			}
+			fmt.Println()
 		}
-		update.Message.Text = strings.TrimPrefix(update.Message.Text, cmd+" ")
-		cmdChar := string(cmd[0])
-		cmd = cmd[1:] // Cutting the command character.
-		switch cmd {
-		case "sd":
-			fmt.Println("  interpreting as cmd sd")
+
+		// Check if message is a command.
+		if update.Message.Text[0] == '/' || update.Message.Text[0] == '!' {
+			cmd := strings.Split(update.Message.Text, " ")[0]
+			update.Message.Text = strings.TrimPrefix(update.Message.Text, cmd+" ")
+			if strings.Contains(cmd, "@") {
+				cmd = strings.Split(cmd, "@")[0]
+			}
+			cmdChar := string(cmd[0])
+			cmd = cmd[1:] // Cutting the command character.
+			switch cmd {
+			case "sd":
+				fmt.Println("  interpreting as cmd ")
+				cmdHandler.SD(ctx, update.Message)
+				return
+			case "upscale":
+				fmt.Println("  interpreting as cmd upscale")
+				cmdHandler.Upscale(ctx, update.Message)
+				return
+			case "cancel":
+				fmt.Println("  interpreting as cmd cancel")
+				cmdHandler.Cancel(ctx, update.Message)
+				return
+			case "models":
+				fmt.Println("  interpreting as cmd models")
+				cmdHandler.Models(ctx, update.Message)
+				return
+			case "samplers":
+				fmt.Println("  interpreting as cmd samplers")
+				cmdHandler.Samplers(ctx, update.Message)
+				return
+			case "embeddings":
+				fmt.Println("  interpreting as cmd embeddings")
+				cmdHandler.Embeddings(ctx, update.Message)
+				return
+			case "loras":
+				fmt.Println("  interpreting as cmd loras")
+				cmdHandler.LoRAs(ctx, update.Message)
+				return
+			case "upscalers":
+				fmt.Println("  interpreting as cmd upscalers")
+				cmdHandler.Upscalers(ctx, update.Message)
+				return
+			case "vaes":
+				fmt.Println("  interpreting as cmd vaes")
+				cmdHandler.VAEs(ctx, update.Message)
+				return
+			case "smi":
+				fmt.Println("  interpreting as cmd smi")
+				cmdHandler.SMI(ctx, update.Message)
+				return
+			case "help":
+				fmt.Println("  interpreting as cmd help")
+				cmdHandler.Help(ctx, update.Message, cmdChar)
+				return
+			case "start":
+				fmt.Println("  interpreting as cmd start")
+				if update.Message.Chat.ID >= 0 { // From user?
+					sendReplyToMessage(ctx, update.Message, "🤖 Welcome! This is a Telegram Bot frontend "+
+						"for rendering images with Stable Diffusion.\n\nMore info:"+
+						" https://github.com/kanootoko/stable-diffusion-telegram-bot")
+				}
+				return
+			default:
+				fmt.Println("  invalid cmd")
+				if update.Message.Chat.ID >= 0 {
+					sendReplyToMessage(ctx, update.Message, errorStr+": invalid command")
+				}
+				return
+			}
+		}
+
+		if update.Message.Chat.ID >= 0 { // From user?
 			cmdHandler.SD(ctx, update.Message)
-			return
-		case "sdupscale":
-			fmt.Println("  interpreting as cmd sdupscale")
-			cmdHandler.SDUpscale(ctx, update.Message)
-			return
-		case "sdcancel":
-			fmt.Println("  interpreting as cmd sdcancel")
-			cmdHandler.SDCancel(ctx, update.Message)
-			return
-		case "sdmodels":
-			fmt.Println("  interpreting as cmd sdmodels")
-			cmdHandler.Models(ctx, update.Message)
-			return
-		case "sdsamplers":
-			fmt.Println("  interpreting as cmd sdsamplers")
-			cmdHandler.Samplers(ctx, update.Message)
-			return
-		case "sdembeddings":
-			fmt.Println("  interpreting as cmd sdembeddings")
-			cmdHandler.Embeddings(ctx, update.Message)
-			return
-		case "sdloras":
-			fmt.Println("  interpreting as cmd sdloras")
-			cmdHandler.LoRAs(ctx, update.Message)
-			return
-		case "sdupscalers":
-			fmt.Println("  interpreting as cmd sdupscalers")
-			cmdHandler.Upscalers(ctx, update.Message)
-			return
-		case "sdvaes":
-			fmt.Println("  interpreting as cmd sdvaes")
-			cmdHandler.VAEs(ctx, update.Message)
-			return
-		case "sdsmi":
-			fmt.Println("  interpreting as cmd sdsmi")
-			cmdHandler.SMI(ctx, update.Message)
-			return
-		case "sdhelp":
-			fmt.Println("  interpreting as cmd sdhelp")
-			cmdHandler.Help(ctx, update.Message, cmdChar)
-			return
-		case "start":
-			fmt.Println("  interpreting as cmd start")
-			if update.Message.Chat.ID >= 0 { // From user?
-				sendReplyToMessage(ctx, update.Message, "🤖 Welcome! This is a Telegram Bot frontend "+
-					"for rendering images with Stable Diffusion.\n\nMore info: https://github.com/nonoo/stable-diffusion-telegram-bot")
-			}
-			return
-		default:
-			fmt.Println("  invalid cmd")
-			if update.Message.Chat.ID >= 0 {
-				sendReplyToMessage(ctx, update.Message, errorStr+": invalid command")
-			}
-			return
 		}
 	}
-
-	if update.Message.Chat.ID >= 0 { // From user?
-		cmdHandler.SD(ctx, update.Message)
-	}
+	return handleMessage
 }
 
-func telegramBotUpdateHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil {
-		return
-	}
+func getTelegramBotUpdateHandler(handleMessage func(ctx context.Context, update *models.Update), botToken string) func(context.Context, *bot.Bot, *models.Update) {
+	telegramBotUpdateHandler := func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		if update.Message == nil {
+			return
+		}
 
-	if update.Message.Document != nil {
-		handleImage(ctx, update, update.Message.Document.FileID, update.Message.Document.FileName)
-	} else if update.Message.Photo != nil && len(update.Message.Photo) > 0 {
-		handleImage(ctx, update, update.Message.Photo[len(update.Message.Photo)-1].FileID, "image.jpg")
-	} else if update.Message.Text != "" {
-		handleMessage(ctx, update)
+		if update.Message.Document != nil {
+			handleImage(ctx, botToken, update, update.Message.Document.FileID, update.Message.Document.FileName)
+		} else if update.Message.Photo != nil && len(update.Message.Photo) > 0 {
+			handleImage(ctx, botToken, update, update.Message.Photo[len(update.Message.Photo)-1].FileID, "image.jpg")
+		} else if update.Message.Text != "" {
+			handleMessage(ctx, update)
+		}
 	}
+	return telegramBotUpdateHandler
 }
 
 func main() {
 	fmt.Println("stable-diffusion-telegram-bot starting...")
+	if _, isEnvFileSet := os.LookupEnv("ENVFILE"); isEnvFileSet {
+		ReadEnvFile(os.Getenv("ENVFILE"))
+	} else {
+		ReadEnvFile(".env")
+	}
+
+	var params paramsType
 
 	if err := params.Init(); err != nil {
 		fmt.Println("error:", err)
 		os.Exit(1)
 	}
 
+	fmt.Println("Using params", params)
+
 	var cancel context.CancelFunc
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	if params.SDStart && !params.DelayedSDStart {
-		if err := startStableDiffusionIfNeeded(ctx); err != nil {
-			panic(err.Error())
-		}
+	sdApi := sdAPIType{params.StableDiffusionApiHost}
+
+	reqQueue.Init(ctx, &sdApi)
+
+	cmdHandler := cmdHandlerType{
+		&sdApi,
+		DefaultGenerationParameters{
+			DefaultModel:      params.DefaultModel,
+			DefaultSampler:    params.DefaultSampler,
+			DefaultWidth:      params.DefaultWidth,
+			DefaultHeight:     params.DefaultHeight,
+			DefaultSteps:      params.DefaultSteps,
+			DefaultWidthSDXL:  params.DefaultWidthSDXL,
+			DefaultHeightSDXL: params.DefaultHeightSDXL,
+			DefaultStepsSDXL:  params.DefaultStepsSDXL,
+			DefaultCnt:        params.DefaultCnt,
+			DefaultBatch:      params.DefaultBatch,
+			DefaultCFGScale:   params.DefaultCFGScale,
+		},
 	}
-
-	reqQueue.Init(ctx)
-
 	opts := []bot.Option{
-		bot.WithDefaultHandler(telegramBotUpdateHandler),
+		bot.WithDefaultHandler(
+			getTelegramBotUpdateHandler(
+				getHandleMessageFunction(
+					params,
+					&cmdHandler,
+				),
+				params.BotToken,
+			),
+		),
 	}
 
 	var err error
@@ -208,14 +243,14 @@ func main() {
 		panic(fmt.Sprint("can't init telegram bot: ", err))
 	}
 
-	verStr, _ := versionCheckGetStr(ctx)
-	sendTextToAdmins(ctx, "🤖 Bot started, "+verStr)
+	verStr, _ := versionCheckGetStr(ctx, params.StableDiffusionApiHost)
+	sendTextToAdmins(ctx, params.AdminUserIDs, "🤖 Bot started, "+verStr)
 
 	go func() {
 		for {
 			time.Sleep(24 * time.Hour)
-			if s, updateNeededOrError := versionCheckGetStr(ctx); updateNeededOrError {
-				sendTextToAdmins(ctx, s)
+			if s, updateNeededOrError := versionCheckGetStr(ctx, params.StableDiffusionApiHost); updateNeededOrError {
+				sendTextToAdmins(ctx, params.AdminUserIDs, s)
 			}
 		}
 	}()

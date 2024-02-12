@@ -7,17 +7,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
 )
 
-const sdAPIURL = "http://localhost:7860/sdapi/v1/"
-
-type sdAPIType struct{}
+type sdAPIType struct {
+	sdHost string
+}
 
 func (a *sdAPIType) req(ctx context.Context, path, service string, postData []byte) (string, error) {
-	path, err := url.JoinPath(sdAPIURL, path)
+	path, err := url.JoinPath(a.sdHost, "/sdapi/v1", path)
 	if err != nil {
 		return "", err
 	}
@@ -43,11 +44,17 @@ func (a *sdAPIType) req(ctx context.Context, path, service string, postData []by
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("api status code: %d", resp.StatusCode)
+		fmt.Printf("Error on body: %s", postData)
+		if bodyBytes, err := io.ReadAll(resp.Body); err == nil {
+			fmt.Printf("Response: %s\n", string(bodyBytes))
+		} else {
+			fmt.Printf("")
+		}
+		return "", fmt.Errorf("api status code: %d (%s to %s)", resp.StatusCode, request.Method, path)
 	}
 	bodyBytes, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
 	if err != nil {
 		return "", err
 	}
@@ -69,7 +76,7 @@ type RenderReq struct {
 	BatchSize         int                    `json:"batch_size"`
 	NIter             int                    `json:"n_iter"`
 	Steps             int                    `json:"steps"`
-	CFGScale          float32                `json:"cfg_scale"`
+	CFGScale          float64                `json:"cfg_scale"`
 	Width             int                    `json:"width"`
 	Height            int                    `json:"height"`
 	NegativePrompt    string                 `json:"negative_prompt"`
@@ -79,6 +86,8 @@ type RenderReq struct {
 
 func (a *sdAPIType) Render(ctx context.Context, p ReqParams, imageData ImageFileData) (imgs [][]byte, err error) {
 	params := p.(ReqParamsRender)
+
+	n_iter := int(math.Ceil(float64(params.NumOutputs) / float64(params.BatchSize)))
 
 	postData, err := json.Marshal(RenderReq{
 		EnableHR:          params.HR.Scale > 0,
@@ -92,8 +101,8 @@ func (a *sdAPIType) Render(ctx context.Context, p ReqParams, imageData ImageFile
 		Prompt:            params.Prompt,
 		Seed:              params.Seed,
 		SamplerName:       params.SamplerName,
-		BatchSize:         params.NumOutputs,
-		NIter:             1,
+		BatchSize:         params.BatchSize,
+		NIter:             n_iter,
 		Steps:             params.Steps,
 		CFGScale:          params.CFGScale,
 		Width:             params.Width,

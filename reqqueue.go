@@ -18,21 +18,19 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-const imageReqStr = "🩻 Please post the image file to process."
+const imageReqStr = "🩻 Please send the image file to process."
 const processStartStr = "🛎 Starting render..."
-const processStr = "🔨 Processing"
-const progressBarLength = 20
+const processStr = "🔨 Working"
+const progressBarLength = 16
 const downloadingStr = "⬇ Downloading..."
-const uploadingStr = "☁ ️ Uploading..."
+const uploadingStr = "☁ Uploading..."
 const doneStr = "✅ Done"
 const errorStr = "❌ Error"
-const canceledStr = "❌ Canceled"
-const restartStr = "⚠️ Stable Diffusion is not running, starting, please wait..."
-const restartFailedStr = "☠️ Stable Diffusion start failed, please restart the bot"
+const canceledStr = "⭕ Canceled"
 
 const processTimeout = 10 * time.Minute
-const groupChatProgressUpdateInterval = 3 * time.Second
-const privateChatProgressUpdateInterval = 500 * time.Millisecond
+const groupChatProgressUpdateInterval = 5 * time.Second
+const privateChatProgressUpdateInterval = 3 * time.Second
 
 type ReqType int
 
@@ -74,6 +72,7 @@ func (e *ReqQueueEntry) sendReply(ctx context.Context, s string) {
 		_, err := telegramBot.EditMessageText(ctx, &bot.EditMessageTextParams{
 			MessageID: e.ReplyMessage.ID,
 			ChatID:    e.ReplyMessage.Chat.ID,
+			ParseMode: models.ParseModeHTML,
 			Text:      s,
 		})
 		if err != nil {
@@ -128,6 +127,7 @@ func (e *ReqQueueEntry) uploadImages(ctx context.Context, firstImageID uint32, d
 		media = append(media, &models.InputMediaPhoto{
 			Media:           "attach://" + filename,
 			MediaAttachment: bytes.NewReader(imgs[i]),
+			ParseMode:       models.ParseModeHTML,
 			Caption:         c,
 		})
 	}
@@ -233,11 +233,11 @@ func (q *ReqQueue) getQueuePositionString(pos int) string {
 	return "👨‍👦‍👦 Request queued at position #" + fmt.Sprint(pos)
 }
 
-func (q *ReqQueue) queryProgress(ctx context.Context, prevProgressPercent int) (progressPercent int, eta time.Duration, err error) {
+func (q *ReqQueue) queryProgress(ctx context.Context, sdApi *sdAPIType, prevProgressPercent int) (progressPercent int, eta time.Duration, err error) {
 	progressPercent = prevProgressPercent
 
 	var newProgressPercent int
-	newProgressPercent, eta, err = sdAPI.GetProgress(ctx)
+	newProgressPercent, eta, err = sdApi.GetProgress(ctx)
 	if err == nil && newProgressPercent > prevProgressPercent {
 		progressPercent = newProgressPercent
 		if progressPercent > 100 {
@@ -263,36 +263,29 @@ func (q *ReqQueue) runProcessThread(processCtx context.Context, processFn ReqQue
 	}
 
 	if errors.Is(err, syscall.ECONNREFUSED) { // Can't connect to Stable Diffusion?
-		if params.SDStart {
-			q.currentEntry.entry.sendReply(processCtx, restartStr)
-			err = startStableDiffusionIfNeeded(processCtx)
-			if err != nil {
-				fmt.Println("  error:", err)
-				q.currentEntry.entry.sendReply(processCtx, restartFailedStr+": "+err.Error())
-				panic(err.Error())
-			}
-			if retryAllowed {
-				q.runProcessThread(processCtx, processFn, reqParams, imageData, false, imgsChan, errChan, stoppedChan)
-				return
-			}
-		} else {
-			fmt.Println("  error: Stable Diffusion is not running and start is disabled, waiting...")
-			time.Sleep(30 * time.Second)
-			if retryAllowed {
-				q.runProcessThread(processCtx, processFn, reqParams, imageData, false, imgsChan, errChan, stoppedChan)
-				return
-			}
-
-			err = fmt.Errorf("Stable Diffusion is not running and start is disabled.")
-			fmt.Println("  error:", err)
+		fmt.Println("  error: Stable Diffusion is not running and start is disabled, waiting...")
+		time.Sleep(30 * time.Second)
+		if retryAllowed {
+			q.runProcessThread(processCtx, processFn, reqParams, imageData, false, imgsChan, errChan, stoppedChan)
+			return
 		}
+
+		err = fmt.Errorf("error: Stable Diffusion is not running and start is disabled")
+		fmt.Println("  error:", err)
 	}
 
 	errChan <- err
 	stoppedChan <- true
 }
 
-func (q *ReqQueue) runProcess(processCtx context.Context, processFn ReqQueueEntryProcessFn, reqParams ReqParams, imageData ImageFileData, reqParamsText string) (imgs [][]byte, err error) {
+func (q *ReqQueue) runProcess(
+	processCtx context.Context,
+	sdApi *sdAPIType,
+	processFn ReqQueueEntryProcessFn,
+	reqParams ReqParams,
+	imageData ImageFileData,
+	reqParamsText string,
+) (imgs [][]byte, err error) {
 	q.currentEntry.entry.sendReply(q.ctx, processStartStr+"\n"+reqParamsText)
 
 	q.currentEntry.imgsChan = make(chan [][]byte)
@@ -332,7 +325,7 @@ func (q *ReqQueue) runProcess(processCtx context.Context, processFn ReqQueueEntr
 		case <-progressPercentUpdateTicker.C:
 			q.currentEntry.entry.sendReply(q.ctx, processStr+" "+getProgressbar(progressPercent, progressBarLength)+" ETA: "+fmt.Sprint(eta.Round(time.Second))+"\n"+reqParamsText)
 		case <-progressCheckTicker.C:
-			progressPercent, eta, _ = q.queryProgress(processCtx, progressPercent)
+			progressPercent, eta, _ = q.queryProgress(processCtx, sdApi, progressPercent)
 		case err = <-q.currentEntry.errChan:
 			return nil, err
 		case imgs = <-q.currentEntry.imgsChan:
@@ -341,10 +334,10 @@ func (q *ReqQueue) runProcess(processCtx context.Context, processFn ReqQueueEntr
 	}
 }
 
-func (q *ReqQueue) upscale(processCtx context.Context, reqParams ReqParamsUpscale, imageData ImageFileData) error {
+func (q *ReqQueue) upscale(processCtx context.Context, sdApi *sdAPIType, reqParams ReqParamsUpscale, imageData ImageFileData) error {
 	reqParamsText := reqParams.String()
 
-	imgs, err := q.runProcess(processCtx, sdAPI.Upscale, reqParams, imageData, reqParamsText)
+	imgs, err := q.runProcess(processCtx, sdApi, sdApi.Upscale, reqParams, imageData, reqParamsText)
 	if err != nil {
 		return err
 	}
@@ -370,10 +363,10 @@ func (q *ReqQueue) upscale(processCtx context.Context, reqParams ReqParamsUpscal
 	return err
 }
 
-func (q *ReqQueue) render(processCtx context.Context, reqParams ReqParamsRender) error {
+func (q *ReqQueue) render(processCtx context.Context, sdApi *sdAPIType, reqParams ReqParamsRender) error {
 	reqParamsText := reqParams.String()
 
-	imgs, err := q.runProcess(processCtx, sdAPI.Render, reqParams, ImageFileData{}, reqParamsText)
+	imgs, err := q.runProcess(processCtx, sdApi, sdApi.Render, reqParams, ImageFileData{}, reqParamsText)
 	if err != nil {
 		return err
 	}
@@ -386,7 +379,7 @@ func (q *ReqQueue) render(processCtx context.Context, reqParams ReqParamsRender)
 			Upscaler:   reqParams.Upscale.Upscaler,
 			OutputPNG:  reqParams.OutputPNG,
 		}
-		imgs, err = q.runProcess(processCtx, sdAPI.Upscale, reqParamsUpscale, ImageFileData{data: imgs[0], filename: ""}, reqParamsUpscale.String())
+		imgs, err = q.runProcess(processCtx, sdApi, sdApi.Upscale, reqParamsUpscale, ImageFileData{data: imgs[0], filename: ""}, reqParamsUpscale.String())
 		if err != nil {
 			return err
 		}
@@ -409,21 +402,21 @@ func (q *ReqQueue) render(processCtx context.Context, reqParams ReqParamsRender)
 	return err
 }
 
-func (q *ReqQueue) processQueueEntry(processCtx context.Context, imageData ImageFileData) error {
+func (q *ReqQueue) processQueueEntry(processCtx context.Context, sdApi *sdAPIType, imageData ImageFileData) error {
 	fmt.Print("processing request from ", q.currentEntry.entry.Message.From.Username, "#",
 		q.currentEntry.entry.Message.From.ID, ": ", q.currentEntry.entry.Params.OrigPrompt(), "\n")
 
 	switch q.currentEntry.entry.Type {
 	case ReqTypeRender:
-		return q.render(processCtx, q.currentEntry.entry.Params.(ReqParamsRender))
+		return q.render(processCtx, sdApi, q.currentEntry.entry.Params.(ReqParamsRender))
 	case ReqTypeUpscale:
-		return q.upscale(processCtx, q.currentEntry.entry.Params.(ReqParamsUpscale), imageData)
+		return q.upscale(processCtx, sdApi, q.currentEntry.entry.Params.(ReqParamsUpscale), imageData)
 	default:
 		return fmt.Errorf("unknown request")
 	}
 }
 
-func (q *ReqQueue) processor() {
+func (q *ReqQueue) processor(sdApi *sdAPIType) {
 	for {
 		q.mutex.Lock()
 		if (len(q.entries)) == 0 {
@@ -472,13 +465,13 @@ func (q *ReqQueue) processor() {
 		}
 
 		if err == nil {
-			err = q.processQueueEntry(processCtx, imageData)
+			err = q.processQueueEntry(processCtx, sdApi, imageData)
 		}
 
 		q.mutex.Lock()
 		if q.currentEntry.canceled {
 			fmt.Print("  canceled\n")
-			err = sdAPI.Interrupt(q.ctx)
+			err = sdApi.Interrupt(q.ctx)
 			if err != nil {
 				fmt.Println("  can't interrupt:", err)
 			}
@@ -506,8 +499,8 @@ func (q *ReqQueue) processor() {
 	}
 }
 
-func (q *ReqQueue) Init(ctx context.Context) {
+func (q *ReqQueue) Init(ctx context.Context, sdApi *sdAPIType) {
 	q.ctx = ctx
 	q.processReqChan = make(chan bool)
-	go q.processor()
+	go q.processor(sdApi)
 }

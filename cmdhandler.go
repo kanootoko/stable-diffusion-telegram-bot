@@ -10,19 +10,22 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type cmdHandlerType struct{}
+type cmdHandlerType struct {
+	sdApi  *sdAPIType
+	params DefaultGenerationParameters
+}
 
 func (c *cmdHandlerType) SD(ctx context.Context, msg *models.Message) {
 	reqParams := ReqParamsRender{
 		origPrompt:  msg.Text,
 		Seed:        rand.Uint32(),
-		Width:       params.DefaultWidth,
-		Height:      params.DefaultHeight,
-		Steps:       35,
-		NumOutputs:  4,
-		CFGScale:    7,
-		SamplerName: params.DefaultSampler,
-		ModelName:   params.DefaultModel,
+		Width:       c.params.DefaultWidth,
+		Height:      c.params.DefaultHeight,
+		Steps:       c.params.DefaultSteps,
+		NumOutputs:  c.params.DefaultCnt,
+		CFGScale:    c.params.DefaultCFGScale,
+		SamplerName: c.params.DefaultSampler,
+		ModelName:   c.params.DefaultModel,
 		Upscale: ReqParamsUpscale{
 			Upscaler: "LDSR",
 		},
@@ -43,7 +46,7 @@ func (c *cmdHandlerType) SD(ctx context.Context, msg *models.Message) {
 		reqParams.Prompt = msg.Text
 		paramsLine = &reqParams.Prompt
 	}
-	firstCmdCharAt, err := ReqParamsParse(ctx, *paramsLine, &reqParams)
+	firstCmdCharAt, err := ReqParamsParse(ctx, c.sdApi, c.params, *paramsLine, &reqParams)
 	if err != nil {
 		sendReplyToMessage(ctx, msg, errorStr+": can't parse render params: "+err.Error())
 		return
@@ -52,8 +55,8 @@ func (c *cmdHandlerType) SD(ctx context.Context, msg *models.Message) {
 		*paramsLine = (*paramsLine)[:firstCmdCharAt]
 	}
 
-	reqParams.Prompt = strings.Trim(reqParams.Prompt, " ")
-	reqParams.NegativePrompt = strings.Trim(reqParams.NegativePrompt, " ")
+	reqParams.Prompt = strings.TrimSpace(reqParams.Prompt)
+	reqParams.NegativePrompt = strings.TrimSpace(reqParams.NegativePrompt)
 
 	if reqParams.Prompt == "" {
 		fmt.Println("  missing prompt")
@@ -73,14 +76,14 @@ func (c *cmdHandlerType) SD(ctx context.Context, msg *models.Message) {
 	reqQueue.Add(req)
 }
 
-func (c *cmdHandlerType) SDUpscale(ctx context.Context, msg *models.Message) {
+func (c *cmdHandlerType) Upscale(ctx context.Context, msg *models.Message) {
 	reqParams := ReqParamsUpscale{
 		origPrompt: msg.Text,
 		Scale:      4,
 		Upscaler:   "LDSR",
 	}
 
-	_, err := ReqParamsParse(ctx, msg.Text, &reqParams)
+	_, err := ReqParamsParse(ctx, c.sdApi, c.params, msg.Text, &reqParams)
 	if err != nil {
 		sendReplyToMessage(ctx, msg, errorStr+": can't parse render params: "+err.Error())
 		return
@@ -94,23 +97,30 @@ func (c *cmdHandlerType) SDUpscale(ctx context.Context, msg *models.Message) {
 	reqQueue.Add(req)
 }
 
-func (c *cmdHandlerType) SDCancel(ctx context.Context, msg *models.Message) {
+func (c *cmdHandlerType) Cancel(ctx context.Context, msg *models.Message) {
 	if err := reqQueue.CancelCurrentEntry(ctx); err != nil {
 		sendReplyToMessage(ctx, msg, errorStr+": "+err.Error())
 	}
 }
 
 func (c *cmdHandlerType) Models(ctx context.Context, msg *models.Message) {
-	models, err := sdAPI.GetModels(ctx)
+	models, err := c.sdApi.GetModels(ctx)
 	if err != nil {
 		fmt.Println("  error getting models:", err)
 		sendReplyToMessage(ctx, msg, errorStr+": error getting models: "+err.Error())
 		return
 	}
-	res := strings.Join(models, ", ")
+	for i := range models {
+		if models[i] == c.params.DefaultModel {
+			models[i] = "- <b>" + models[i] + "</b> (default)"
+		} else {
+			models[i] = "- <code>" + models[i] + "</code>"
+		}
+	}
+	res := strings.Join(models, "\n")
 	var text string
 	if res != "" {
-		text = "🧩 Available models: " + res + ". Default: " + params.DefaultModel
+		text = "🧩 Available models:\n" + res
 	} else {
 		text = "No available models."
 	}
@@ -118,16 +128,23 @@ func (c *cmdHandlerType) Models(ctx context.Context, msg *models.Message) {
 }
 
 func (c *cmdHandlerType) Samplers(ctx context.Context, msg *models.Message) {
-	samplers, err := sdAPI.GetSamplers(ctx)
+	samplers, err := c.sdApi.GetSamplers(ctx)
 	if err != nil {
 		fmt.Println("  error getting samplers:", err)
 		sendReplyToMessage(ctx, msg, errorStr+": error getting samplers: "+err.Error())
 		return
 	}
+	for i := range samplers {
+		if samplers[i] == c.params.DefaultSampler {
+			samplers[i] = "- <b>" + samplers[i] + "</b> (default)"
+		} else {
+			samplers[i] = "- <code>" + samplers[i] + "</code>"
+		}
+	}
 	res := strings.Join(samplers, ", ")
 	var text string
 	if res != "" {
-		text = "🔭 Available samplers: " + res + ". Default: " + params.DefaultSampler
+		text = "🔭 Available samplers:\n" + res
 	} else {
 		text = "No available samplers."
 	}
@@ -135,11 +152,14 @@ func (c *cmdHandlerType) Samplers(ctx context.Context, msg *models.Message) {
 }
 
 func (c *cmdHandlerType) Embeddings(ctx context.Context, msg *models.Message) {
-	embs, err := sdAPI.GetEmbeddings(ctx)
+	embs, err := c.sdApi.GetEmbeddings(ctx)
 	if err != nil {
 		fmt.Println("  error getting embeddings:", err)
 		sendReplyToMessage(ctx, msg, errorStr+": error getting embeddings: "+err.Error())
 		return
+	}
+	for i := range embs {
+		embs[i] = "- <code>" + embs[i] + "</code>"
 	}
 	res := strings.Join(embs, ", ")
 	var text string
@@ -152,11 +172,14 @@ func (c *cmdHandlerType) Embeddings(ctx context.Context, msg *models.Message) {
 }
 
 func (c *cmdHandlerType) LoRAs(ctx context.Context, msg *models.Message) {
-	loras, err := sdAPI.GetLoRAs(ctx)
+	loras, err := c.sdApi.GetLoRAs(ctx)
 	if err != nil {
 		fmt.Println("  error getting loras:", err)
 		sendReplyToMessage(ctx, msg, errorStr+": error getting loras: "+err.Error())
 		return
+	}
+	for i := range loras {
+		loras[i] = "- <code>" + loras[i] + "</code>"
 	}
 	res := strings.Join(loras, ", ")
 	var text string
@@ -169,11 +192,14 @@ func (c *cmdHandlerType) LoRAs(ctx context.Context, msg *models.Message) {
 }
 
 func (c *cmdHandlerType) Upscalers(ctx context.Context, msg *models.Message) {
-	ups, err := sdAPI.GetUpscalers(ctx)
+	ups, err := c.sdApi.GetUpscalers(ctx)
 	if err != nil {
 		fmt.Println("  error getting upscalers:", err)
 		sendReplyToMessage(ctx, msg, errorStr+": error getting upscalers: "+err.Error())
 		return
+	}
+	for i := range ups {
+		ups[i] = "- <code>" + ups[i] + "</code>"
 	}
 	res := strings.Join(ups, ", ")
 	var text string
@@ -186,11 +212,14 @@ func (c *cmdHandlerType) Upscalers(ctx context.Context, msg *models.Message) {
 }
 
 func (c *cmdHandlerType) VAEs(ctx context.Context, msg *models.Message) {
-	vaes, err := sdAPI.GetVAEs(ctx)
+	vaes, err := c.sdApi.GetVAEs(ctx)
 	if err != nil {
 		fmt.Println("  error getting vaes:", err)
 		sendReplyToMessage(ctx, msg, errorStr+": error getting vaes: "+err.Error())
 		return
+	}
+	for i := range vaes {
+		vaes[i] = "- <code>" + vaes[i] + "</code>"
 	}
 	res := strings.Join(vaes, ", ")
 	var text string
@@ -210,42 +239,54 @@ func (c *cmdHandlerType) SMI(ctx context.Context, msg *models.Message) {
 		sendReplyToMessage(ctx, msg, errorStr+": error running nvidia-smi: "+err.Error())
 		return
 	}
-	sendReplyToMessage(ctx, msg, string(out))
+	sendReplyToMessage(ctx, msg, "<pre>"+string(out)+"</pre>")
 }
 
 func (c *cmdHandlerType) Help(ctx context.Context, msg *models.Message, cmdChar string) {
-	sendReplyToMessage(ctx, msg, "🤖 Stable Diffusion Telegram Bot\n\n"+
-		"Available commands:\n\n"+
-		cmdChar+"sd [prompt] - render prompt\n"+
-		cmdChar+"sdupscale - upscale image\n"+
-		cmdChar+"sdcancel - cancel ongoing request\n"+
-		cmdChar+"sdmodels - list available models\n"+
-		cmdChar+"sdsamplers - list available samplers\n"+
-		cmdChar+"sdembeddings - list available embeddings\n"+
-		cmdChar+"sdloras - list available LoRAs\n"+
-		cmdChar+"sdupscalers - list available upscalers\n"+
-		cmdChar+"sdvaes - list available VAEs\n"+
-		cmdChar+"sdsmi - get the output of nvidia-smi\n"+
-		cmdChar+"sdhelp - show this help\n\n"+
-		"Available render parameters at the end of the prompt:\n\n"+
-		"-seed/s - set seed\n"+
-		"-width/w - set output image width\n"+
-		"-height/h - set output image height\n"+
-		"-steps/t - set the number of steps\n"+
-		"-outcnt/o - set count of output images\n"+
-		"-png - upload PNGs instead of JPEGs\n"+
-		"-cfg/c - set CFG scale\n"+
-		"-sampler/r - set sampler, get valid values with /sdsamplers\n"+
-		"-model/m - set model, get valid values with /sdmodels\n"+
-		"-upscale/u - upscale output image with ratio\n"+
-		"-upscaler - set upscaler method, get valid values with /sdupscalers\n"+
-		"-hr - enable highres mode and set upscale ratio\n"+
-		"-hr-denoisestrength/hrd - set highres mode denoise strength\n"+
-		"-hr-upscaler/hru - set highres mode upscaler, get valid values with /sdupscalers\n"+
-		"-hr-steps/hrt - set the number of highres mode second pass steps\n\n"+
-		"Available upscale parameters:\n\n"+
-		"-upscale/u - upscale output image with ratio\n"+
-		"-upscaler - set upscaler method, get valid values with /sdupscalers\n"+
-		"-png - upload PNGs instead of JPEGs\n\n"+
-		"For more information see https://github.com/nonoo/stable-diffusion-telegram-bot")
+	sendReplyToMessage(
+		ctx,
+		msg,
+		"🤖 Stable Diffusion Telegram Bot\n\n"+
+			"Available commands:\n\n"+
+
+			cmdChar+"sd [prompt] - render prompt (negative prompt can be put"+
+			" on the next line)\n"+
+			cmdChar+"upscale - upscale image\n"+
+			cmdChar+"cancel - cancel ongoing request\n"+
+			cmdChar+"models - list available models\n"+
+			cmdChar+"samplers - list available samplers\n"+
+			cmdChar+"embeddings - list available embeddings\n"+
+			cmdChar+"loras - list available LoRAs\n"+
+			cmdChar+"upscalers - list available upscalers\n"+
+			cmdChar+"vaes - list available VAEs\n"+
+			cmdChar+"smi - get the output of nvidia-smi\n"+
+			cmdChar+"help - show this help\n\n"+
+
+			"Available render parameters at the end of the prompt:\n\n"+
+
+			"-seed/s - set seed\n"+
+			"-width/w - set output image width\n"+
+			"-height/h - set output image height\n"+
+			"-steps/t - set the number of steps\n"+
+			"-cnt/o - set count of output images\n"+
+			"-batch/b - set batch size of output images\n"+
+			"-png - upload PNGs instead of JPEGs\n"+
+			"-cfg/c - set CFG scale\n"+
+			"-sampler/r - set sampler, get valid values with /samplers\n"+
+			"-model/m - set model, get valid values with /models\n"+
+			"-upscale/u - upscale output image with ratio\n"+
+			"-upscaler - set upscaler method, get valid values with /upscalers\n"+
+			"-hr - enable highres mode and set upscale ratio\n"+
+			"-hr-denoisestrength/hrd - set highres mode denoise strength\n"+
+			"-hr-upscaler/hru - set highres mode upscaler, get valid values with /upscalers\n"+
+			"-hr-steps/hrt - set the number of highres mode second pass steps\n\n"+
+
+			"Available upscale parameters:\n\n"+
+
+			"-upscale/u - upscale output image with ratio\n"+
+			"-upscaler - set upscaler method, get valid values with /upscalers\n"+
+			"-png - upload PNGs instead of JPEGs\n\n"+
+
+			"For more information see https://github.com/kanootoko/stable-diffusion-telegram-bot",
+	)
 }

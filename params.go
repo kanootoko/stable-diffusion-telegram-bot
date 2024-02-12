@@ -11,44 +11,170 @@ import (
 )
 
 type paramsType struct {
-	BotToken                 string
-	StableDiffusionPath      string
-	StableDiffusionWebUIPath string
+	BotToken               string
+	StableDiffusionApiHost string
 
 	AllowedUserIDs  []int64
 	AdminUserIDs    []int64
 	AllowedGroupIDs []int64
 
-	SDStart           bool
-	DelayedSDStart    bool
 	DefaultModel      string
 	DefaultSampler    string
+	DefaultCnt        int
+	DefaultBatch      int
+	DefaultSteps      int
 	DefaultWidth      int
 	DefaultHeight     int
 	DefaultWidthSDXL  int
 	DefaultHeightSDXL int
+	DefaultStepsSDXL  int
+	DefaultCFGScale   float64
 }
 
-var params paramsType
+type defaultsDefaults struct {
+	StableDiffusionApiHost string
+	Model                  string
+	Sampler                string
+	Cnt                    int
+	Batch                  int
+	Steps                  int
+	Width                  int
+	Height                 int
+	WidthSDXL              int
+	HeightSDXL             int
+	StepsSDXL              int
+	CFGScale               float64
+}
+
+func getDefaultsFromEnv() (defaults defaultsDefaults) {
+	if value, isSet := os.LookupEnv("STABLE_DIFFUSION_API"); isSet {
+		defaults.StableDiffusionApiHost = value
+	} else {
+		defaults.StableDiffusionApiHost = "http://localhost:7860"
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_MODEL"); isSet {
+		defaults.Model = value
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_SAMPLER"); isSet {
+		defaults.Sampler = value
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_WIDTH"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.Width = intValue
+		} else {
+			defaults.Width = 512
+		}
+	} else {
+		defaults.Width = 512
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_HEIGHT"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.Height = intValue
+		} else {
+			defaults.Height = 512
+		}
+	} else {
+		defaults.Height = 512
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_STEPS"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.Steps = intValue
+		} else {
+			defaults.Steps = 30
+		}
+	} else {
+		defaults.Steps = 30
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_CNT"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.Cnt = intValue
+		} else {
+			defaults.Cnt = 2
+		}
+	} else {
+		defaults.Cnt = 2
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_BATCH"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.Batch = intValue
+		} else {
+			defaults.Batch = 1
+		}
+	} else {
+		defaults.Batch = 1
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_WIDTH_SDXL"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.WidthSDXL = intValue
+		} else {
+			defaults.WidthSDXL = 512
+		}
+	} else {
+		defaults.WidthSDXL = 512
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_HEIGHT_SDXL"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.HeightSDXL = intValue
+		} else {
+			defaults.HeightSDXL = 512
+		}
+	} else {
+		defaults.HeightSDXL = 512
+	}
+
+	if value, isSet := os.LookupEnv("DEFAULT_STEPS_SDXL"); isSet {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			defaults.StepsSDXL = intValue
+		} else {
+			defaults.StepsSDXL = 25
+		}
+	} else {
+		defaults.StepsSDXL = 25
+	}
+	if value, isSet := os.LookupEnv("DEFAULT_CFG_SCALE"); isSet {
+		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+			defaults.CFGScale = floatValue
+		} else {
+			defaults.CFGScale = 7.0
+		}
+	} else {
+		defaults.CFGScale = 7.0
+	}
+	return
+}
 
 func (p *paramsType) Init() error {
-	flag.StringVar(&p.BotToken, "bot-token", "", "telegram bot token")
-	flag.StringVar(&p.StableDiffusionPath, "sd-path", "", "path of the stable diffusion directory")
-	flag.StringVar(&p.StableDiffusionWebUIPath, "sd-webui-path", "", "path of the stable diffusion webui start script")
+
+	defaults := getDefaultsFromEnv()
+
+	flag.StringVar(&p.BotToken, "bot-token", "", "telegram bot token [required]")
+	flag.StringVar(&p.StableDiffusionApiHost, "sd-api", defaults.StableDiffusionApiHost, "address of running Stable Diffusion AUTOMATIC1111 API")
 	var allowedUserIDs string
 	flag.StringVar(&allowedUserIDs, "allowed-user-ids", "", "allowed telegram user ids")
 	var adminUserIDs string
 	flag.StringVar(&adminUserIDs, "admin-user-ids", "", "admin telegram user ids")
 	var allowedGroupIDs string
 	flag.StringVar(&allowedGroupIDs, "allowed-group-ids", "", "allowed telegram group ids")
-	flag.BoolVar(&p.SDStart, "sd-start", true, "start stable diffusion if needed")
-	flag.BoolVar(&p.DelayedSDStart, "delayed-sd-start", false, "start stable diffusion only when the first prompt arrives")
-	flag.StringVar(&p.DefaultModel, "default-model", "", "default model name")
-	flag.StringVar(&p.DefaultSampler, "default-sampler", "", "default sampler name")
-	flag.IntVar(&p.DefaultWidth, "default-width", 512, "default image width")
-	flag.IntVar(&p.DefaultHeight, "default-height", 512, "default image height")
-	flag.IntVar(&p.DefaultWidthSDXL, "default-width-sdxl", 1024, "default image width for SDXL models")
-	flag.IntVar(&p.DefaultHeightSDXL, "default-height-sdxl", 1024, "default image height for SDXL models")
+	flag.StringVar(&p.DefaultModel, "default-model", defaults.Model, "default model name")
+	flag.StringVar(&p.DefaultSampler, "default-sampler", defaults.Sampler, "default sampler name")
+	flag.IntVar(&p.DefaultCnt, "default-cnt", defaults.Cnt, "default images count")
+	flag.IntVar(&p.DefaultBatch, "default-batch", defaults.Batch, "default images batch size")
+	flag.IntVar(&p.DefaultSteps, "default-steps", defaults.Steps, "default generation steps")
+	flag.IntVar(&p.DefaultWidth, "default-width", defaults.Width, "default image width")
+	flag.IntVar(&p.DefaultHeight, "default-height", defaults.Height, "default image height")
+	flag.IntVar(&p.DefaultWidthSDXL, "default-width-sdxl", defaults.WidthSDXL, "default image width for SDXL models")
+	flag.IntVar(&p.DefaultHeightSDXL, "default-height-sdxl", defaults.HeightSDXL, "default image height for SDXL models")
+	flag.IntVar(&p.DefaultStepsSDXL, "default-cnt-sdxl", defaults.StepsSDXL, "default generation steps count for SDXL models")
+	flag.Float64Var(&p.DefaultCFGScale, "default-cfg-scale", defaults.CFGScale, "default CFG scale")
 	flag.Parse()
 
 	if p.BotToken == "" {
@@ -56,19 +182,6 @@ func (p *paramsType) Init() error {
 	}
 	if p.BotToken == "" {
 		return fmt.Errorf("bot token not set")
-	}
-
-	if p.StableDiffusionPath == "" {
-		p.StableDiffusionPath = os.Getenv("STABLE_DIFFUSION_PATH")
-	}
-	if p.StableDiffusionPath == "" {
-		return fmt.Errorf("stable diffusion path not set")
-	}
-	if p.StableDiffusionWebUIPath == "" {
-		p.StableDiffusionWebUIPath = os.Getenv("STABLE_DIFFUSION_WEBUI_PATH")
-	}
-	if p.StableDiffusionWebUIPath == "" {
-		return fmt.Errorf("stable diffusion webui path not set")
 	}
 
 	if allowedUserIDs == "" {
@@ -117,65 +230,6 @@ func (p *paramsType) Init() error {
 			return fmt.Errorf("allowed group ids contains invalid group ID: " + idStr)
 		}
 		p.AllowedGroupIDs = append(p.AllowedGroupIDs, id)
-	}
-
-	s := os.Getenv("SD_START")
-	if s != "" {
-		if s == "0" {
-			p.SDStart = false
-		} else {
-			p.SDStart = true
-		}
-	}
-
-	s = os.Getenv("DELAYED_SD_START")
-	if s != "" {
-		if s == "0" {
-			p.DelayedSDStart = false
-		} else {
-			p.DelayedSDStart = true
-		}
-	}
-
-	if p.DefaultModel == "" {
-		p.DefaultModel = os.Getenv("DEFAULT_MODEL")
-	}
-
-	if p.DefaultSampler == "" {
-		p.DefaultSampler = os.Getenv("DEFAULT_SAMPLER")
-	}
-
-	s = os.Getenv("DEFAULT_WIDTH")
-	if s != "" {
-		val, err := strconv.Atoi(s)
-		if err != nil {
-			return fmt.Errorf("invalid default width")
-		}
-		p.DefaultWidth = val
-	}
-	s = os.Getenv("DEFAULT_HEIGHT")
-	if s != "" {
-		val, err := strconv.Atoi(s)
-		if err != nil {
-			return fmt.Errorf("invalid default height")
-		}
-		p.DefaultHeight = val
-	}
-	s = os.Getenv("DEFAULT_WIDTH_SDXL")
-	if s != "" {
-		val, err := strconv.Atoi(s)
-		if err != nil {
-			return fmt.Errorf("invalid default width for SDXL")
-		}
-		p.DefaultWidthSDXL = val
-	}
-	s = os.Getenv("DEFAULT_HEIGHT_SDXL")
-	if s != "" {
-		val, err := strconv.Atoi(s)
-		if err != nil {
-			return fmt.Errorf("invalid default height for SDXL")
-		}
-		p.DefaultHeightSDXL = val
 	}
 
 	return nil

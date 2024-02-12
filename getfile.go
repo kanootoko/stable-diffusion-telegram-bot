@@ -36,7 +36,7 @@ func (wc *WriteCounter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (g *GetFile) GetFile(ctx context.Context, fileID string) (d []byte, err error) {
+func (g *GetFile) GetFile(ctx context.Context, botToken, fileID string) (d []byte, err error) {
 	fmt.Println("  downloading...")
 
 	f, err := telegramBot.GetFile(ctx, &bot.GetFileParams{
@@ -45,7 +45,7 @@ func (g *GetFile) GetFile(ctx context.Context, fileID string) (d []byte, err err
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Get("https://api.telegram.org/file/bot" + params.BotToken + "/" + f.FilePath)
+	resp, err := http.Get("https://api.telegram.org/file/bot" + botToken + "/" + f.FilePath)
 	if err != nil {
 		return nil, err
 	}

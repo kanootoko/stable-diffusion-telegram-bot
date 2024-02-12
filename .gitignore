@@ -1,2 +1,4 @@
-/config.inc.sh
-/stable-diffusion-telegram-bot
+*.env
+/stable-diffusion-telegram-bot*
+/.vscode
+/.*.code-workspace

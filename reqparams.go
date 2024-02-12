@@ -43,10 +43,11 @@ type ReqParamsRender struct {
 	Seed           uint32
 	Width          int
 	Height         int
+	BatchSize      int
 	Steps          int
 	NumOutputs     int
 	OutputPNG      bool
-	CFGScale       float32
+	CFGScale       float64
 	SamplerName    string
 	ModelName      string
 
@@ -66,8 +67,17 @@ func (r ReqParamsRender) String() string {
 		outFormatText = "/PNG"
 	}
 
-	res := fmt.Sprintf("🌱%d 👟%d 🕹%.1f 🖼%dx%d%s%s 🔭%s 🧩%s", r.Seed, r.Steps, r.CFGScale, r.Width, r.Height,
-		numOutputs, outFormatText, r.SamplerName, r.ModelName)
+	res := fmt.Sprintf("🌱<code>%d</code> 👟%d 🕹%.1f 🖼%dx%d%s%s 🔭%s 🧩%s",
+		r.Seed,
+		r.Steps,
+		r.CFGScale,
+		r.Width,
+		r.Height,
+		numOutputs,
+		outFormatText,
+		r.SamplerName,
+		r.ModelName,
+	)
 
 	if r.HR.Scale > 0 {
 		res += " 🔎 " + r.HR.Upscaler + "x" + fmt.Sprint(r.HR.Scale, "/", r.HR.DenoisingStrength)
@@ -94,8 +104,22 @@ type ReqParams interface {
 	OrigPrompt() string
 }
 
+type DefaultGenerationParameters struct {
+	DefaultModel      string
+	DefaultSampler    string
+	DefaultWidth      int
+	DefaultHeight     int
+	DefaultSteps      int
+	DefaultWidthSDXL  int
+	DefaultHeightSDXL int
+	DefaultStepsSDXL  int
+	DefaultCnt        int
+	DefaultBatch      int
+	DefaultCFGScale   float64
+}
+
 // Returns -1 as firstCmdCharAt if no params have been found in the given string.
-func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCmdCharAt int, err error) {
+func ReqParamsParse(ctx context.Context, sdApi *sdAPIType, params DefaultGenerationParameters, s string, reqParams ReqParams) (firstCmdCharAt int, err error) {
 	lexer := shlex.NewLexer(strings.NewReader(s))
 
 	var reqParamsRender *ReqParamsRender
@@ -111,6 +135,9 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 
 	gotWidth := false
 	gotHeight := false
+	gotSteps := false
+	gotNumOutputs := false
+	gotBatchSize := false
 
 	firstCmdCharAt = -1
 	for {
@@ -189,7 +216,23 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			}
 			reqParamsRender.Steps = valInt
 			validAttr = true
-		case "outcnt", "o":
+			gotBatchSize = true
+		case "batch", "b":
+			if reqParamsRender == nil {
+				break
+			}
+			val, lexErr := lexer.Next()
+			if lexErr != nil {
+				return 0, fmt.Errorf(attr + " is missing value")
+			}
+			valInt, err := strconv.Atoi(val)
+			if err != nil {
+				return 0, fmt.Errorf("invalid batch size")
+			}
+			reqParamsRender.BatchSize = valInt
+			validAttr = true
+			gotBatchSize = true
+		case "cnt", "o":
 			if reqParamsRender == nil {
 				break
 			}
@@ -203,6 +246,7 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			}
 			reqParamsRender.NumOutputs = valInt
 			validAttr = true
+			gotNumOutputs = true
 		case "png", "p":
 			if reqParamsRender != nil {
 				reqParamsRender.OutputPNG = true
@@ -217,11 +261,11 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			if lexErr != nil {
 				return 0, fmt.Errorf(attr + " is missing value")
 			}
-			valFloat, err := strconv.ParseFloat(val, 32)
+			valFloat, err := strconv.ParseFloat(val, 64)
 			if err != nil {
 				return 0, fmt.Errorf("  invalid CFG scale")
 			}
-			reqParamsRender.CFGScale = float32(valFloat)
+			reqParamsRender.CFGScale = valFloat
 			validAttr = true
 		case "sampler", "r":
 			if reqParamsRender == nil {
@@ -231,7 +275,7 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			if lexErr != nil {
 				return 0, fmt.Errorf(attr + " is missing value")
 			}
-			samplers, err := sdAPI.GetSamplers(ctx)
+			samplers, err := sdApi.GetSamplers(ctx)
 			if err != nil {
 				return 0, fmt.Errorf("error getting samplers: %w", err)
 			}
@@ -248,7 +292,7 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			if lexErr != nil {
 				return 0, fmt.Errorf(attr + " is missing value")
 			}
-			models, err := sdAPI.GetModels(ctx)
+			models, err := sdApi.GetModels(ctx)
 			if err != nil {
 				return 0, fmt.Errorf("error getting models: %w", err)
 			}
@@ -283,7 +327,7 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			if lexErr != nil {
 				return 0, fmt.Errorf(attr + " is missing value")
 			}
-			upscalers, err := sdAPI.GetUpscalers(ctx)
+			upscalers, err := sdApi.GetUpscalers(ctx)
 			if err != nil {
 				return 0, fmt.Errorf("error getting upscalers: %w", err)
 			}
@@ -332,7 +376,7 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			if lexErr != nil {
 				return 0, fmt.Errorf(attr + " is missing value")
 			}
-			upscalers, err := sdAPI.GetUpscalers(ctx)
+			upscalers, err := sdApi.GetUpscalers(ctx)
 			if err != nil {
 				return 0, fmt.Errorf("error getting upscalers: %w", err)
 			}
@@ -363,12 +407,21 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 	}
 
 	if reqParamsRender != nil {
-		if strings.HasSuffix(strings.ToLower(reqParamsRender.ModelName), "sdxl") {
+		if !gotNumOutputs {
+			reqParamsRender.NumOutputs = params.DefaultCnt
+		}
+		if !gotBatchSize {
+			reqParamsRender.BatchSize = params.DefaultBatch
+		}
+		if strings.Contains(strings.ToLower(reqParamsRender.ModelName), "xl") {
 			if !gotWidth {
 				reqParamsRender.Width = params.DefaultWidthSDXL
 			}
 			if !gotHeight {
 				reqParamsRender.Height = params.DefaultHeightSDXL
+			}
+			if !gotSteps {
+				reqParamsRender.Steps = params.DefaultSteps
 			}
 		} else {
 			if !gotWidth {
@@ -376,6 +429,9 @@ func ReqParamsParse(ctx context.Context, s string, reqParams ReqParams) (firstCm
 			}
 			if !gotHeight {
 				reqParamsRender.Height = params.DefaultHeight
+			}
+			if !gotSteps {
+				reqParamsRender.Steps = params.DefaultStepsSDXL
 			}
 		}
 
