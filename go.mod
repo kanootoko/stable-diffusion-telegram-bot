@@ -1,6 +1,6 @@
 module github.com/kanootoko/stable-diffusion-telegram-bot
 
-go 1.20
+go 1.21
 
 require (
 	github.com/go-telegram/bot v0.7.14

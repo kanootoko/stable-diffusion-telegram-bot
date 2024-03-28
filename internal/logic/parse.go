@@ -1,4 +1,4 @@
-package main
+package logic
 
 import (
 	"context"
@@ -7,127 +7,22 @@ import (
 	"strings"
 
 	"github.com/google/shlex"
+	"github.com/kanootoko/stable-diffusion-telegram-bot/internal/config"
+	"github.com/kanootoko/stable-diffusion-telegram-bot/internal/reqparams"
+	sdapi "github.com/kanootoko/stable-diffusion-telegram-bot/internal/sd_api"
 	"golang.org/x/exp/slices"
 )
 
-type ReqParamsUpscale struct {
-	origPrompt string
-	Scale      float32
-	Upscaler   string
-	OutputPNG  bool
-}
-
-func (r ReqParamsUpscale) String() string {
-	res := "🔎 " + r.Upscaler + "x" + fmt.Sprint(r.Scale)
-	if r.OutputPNG {
-		res += "/PNG"
-	}
-	return res
-}
-
-func (r ReqParamsUpscale) OrigPrompt() string {
-	return r.origPrompt
-}
-
-type ReqParamsRenderHR struct {
-	DenoisingStrength float32
-	Scale             float32
-	Upscaler          string
-	SecondPassSteps   int
-}
-
-type ReqParamsRender struct {
-	origPrompt     string
-	Prompt         string
-	NegativePrompt string
-	Seed           uint32
-	Width          int
-	Height         int
-	BatchSize      int
-	Steps          int
-	NumOutputs     int
-	OutputPNG      bool
-	CFGScale       float64
-	SamplerName    string
-	ModelName      string
-
-	Upscale ReqParamsUpscale
-
-	HR ReqParamsRenderHR
-}
-
-func (r ReqParamsRender) String() string {
-	var numOutputs string
-	if r.NumOutputs > 1 {
-		numOutputs = fmt.Sprintf("x%d", r.NumOutputs)
-	}
-
-	var outFormatText string
-	if r.OutputPNG {
-		outFormatText = "/PNG"
-	}
-
-	res := fmt.Sprintf("🌱<code>%d</code> 👟%d 🕹%.1f 🖼%dx%d%s%s 🔭%s 🧩%s",
-		r.Seed,
-		r.Steps,
-		r.CFGScale,
-		r.Width,
-		r.Height,
-		numOutputs,
-		outFormatText,
-		r.SamplerName,
-		r.ModelName,
-	)
-
-	if r.HR.Scale > 0 {
-		res += " 🔎 " + r.HR.Upscaler + "x" + fmt.Sprint(r.HR.Scale, "/", r.HR.DenoisingStrength)
-	} else if r.Upscale.Scale > 0 {
-		res += " " + r.Upscale.String()
-	}
-
-	if r.NegativePrompt != "" {
-		negText := r.NegativePrompt
-		if len(negText) > 10 {
-			negText = negText[:10] + "..."
-		}
-		res = "📍" + negText + " " + res
-	}
-	return res
-}
-
-func (r ReqParamsRender) OrigPrompt() string {
-	return r.origPrompt
-}
-
-type ReqParams interface {
-	String() string
-	OrigPrompt() string
-}
-
-type DefaultGenerationParameters struct {
-	DefaultModel      string
-	DefaultSampler    string
-	DefaultWidth      int
-	DefaultHeight     int
-	DefaultSteps      int
-	DefaultWidthSDXL  int
-	DefaultHeightSDXL int
-	DefaultStepsSDXL  int
-	DefaultCnt        int
-	DefaultBatch      int
-	DefaultCFGScale   float64
-}
-
 // Returns -1 as firstCmdCharAt if no params have been found in the given string.
-func ReqParamsParse(ctx context.Context, sdApi *sdAPIType, params DefaultGenerationParameters, s string, reqParams ReqParams) (firstCmdCharAt int, err error) {
+func ReqParamsParse(ctx context.Context, sdApi *sdapi.SdAPIType, defaults config.GenerationDefaults, s string, reqParams reqparams.ReqParams) (firstCmdCharAt int, err error) {
 	lexer := shlex.NewLexer(strings.NewReader(s))
 
-	var reqParamsRender *ReqParamsRender
-	var reqParamsUpscale *ReqParamsUpscale
+	var reqParamsRender *reqparams.ReqParamsRender
+	var reqParamsUpscale *reqparams.ReqParamsUpscale
 	switch v := reqParams.(type) {
-	case *ReqParamsRender:
+	case *reqparams.ReqParamsRender:
 		reqParamsRender = v
-	case *ReqParamsUpscale:
+	case *reqparams.ReqParamsUpscale:
 		reqParamsUpscale = v
 	default:
 		return 0, fmt.Errorf("invalid reqParams type")
@@ -216,7 +111,7 @@ func ReqParamsParse(ctx context.Context, sdApi *sdAPIType, params DefaultGenerat
 			}
 			reqParamsRender.Steps = valInt
 			validAttr = true
-			gotBatchSize = true
+			gotSteps = true
 		case "batch", "b":
 			if reqParamsRender == nil {
 				break
@@ -253,6 +148,7 @@ func ReqParamsParse(ctx context.Context, sdApi *sdAPIType, params DefaultGenerat
 			} else if reqParamsUpscale != nil {
 				reqParamsUpscale.OutputPNG = true
 			}
+			validAttr = true
 		case "cfg", "c":
 			if reqParamsRender == nil {
 				break
@@ -408,30 +304,30 @@ func ReqParamsParse(ctx context.Context, sdApi *sdAPIType, params DefaultGenerat
 
 	if reqParamsRender != nil {
 		if !gotNumOutputs {
-			reqParamsRender.NumOutputs = params.DefaultCnt
+			reqParamsRender.NumOutputs = defaults.Cnt
 		}
 		if !gotBatchSize {
-			reqParamsRender.BatchSize = params.DefaultBatch
+			reqParamsRender.BatchSize = defaults.Batch
 		}
 		if strings.Contains(strings.ToLower(reqParamsRender.ModelName), "xl") {
 			if !gotWidth {
-				reqParamsRender.Width = params.DefaultWidthSDXL
+				reqParamsRender.Width = defaults.WidthSDXL
 			}
 			if !gotHeight {
-				reqParamsRender.Height = params.DefaultHeightSDXL
+				reqParamsRender.Height = defaults.HeightSDXL
 			}
 			if !gotSteps {
-				reqParamsRender.Steps = params.DefaultSteps
+				reqParamsRender.Steps = defaults.Steps
 			}
 		} else {
 			if !gotWidth {
-				reqParamsRender.Width = params.DefaultWidth
+				reqParamsRender.Width = defaults.Width
 			}
 			if !gotHeight {
-				reqParamsRender.Height = params.DefaultHeight
+				reqParamsRender.Height = defaults.Height
 			}
 			if !gotSteps {
-				reqParamsRender.Steps = params.DefaultStepsSDXL
+				reqParamsRender.Steps = defaults.StepsSDXL
 			}
 		}
 

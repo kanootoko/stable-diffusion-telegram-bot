@@ -1,4 +1,6 @@
 sd - render images using supplied prompt
+txt2img - render images using supplied prompt
+upscale - upscale the next picture
 cancel - cancel ongoing request
 models - list available models
 samplers - list available samplers

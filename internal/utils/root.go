@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func getProgressbar(progressPercent, progressBarLen int) (progressBar string) {
+func GetProgressbar(progressPercent, progressBarLen int) (progressBar string) {
 	i := 0
 	for ; i < progressPercent/(100/progressBarLen); i++ {
 		progressBar += "▰"
@@ -19,7 +19,7 @@ func getProgressbar(progressPercent, progressBarLen int) (progressBar string) {
 	return
 }
 
-func fileNameWithoutExt(fileName string) string {
+func FilenameWithoutExt(fileName string) string {
 	return fileName[:len(fileName)-len(filepath.Ext(fileName))]
 }
 

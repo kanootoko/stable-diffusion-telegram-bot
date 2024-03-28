@@ -1,4 +1,4 @@
-package main
+package sdapi
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v53/github"
+	"github.com/kanootoko/stable-diffusion-telegram-bot/internal/consts"
 )
 
 const versionCheckTimeout = time.Second * 10
@@ -66,14 +67,14 @@ func versionCheck(ctx context.Context, stableDiffusionApiHost string) (latestVer
 	return latestVersion, currentVersion, nil
 }
 
-func versionCheckGetStr(ctx context.Context, stableDiffusionApiHost string) (res string, updateNeededOrError bool) {
+func VersionCheckGetStr(ctx context.Context, stableDiffusionApiHost string) (res string, updateNeededOrError bool) {
 	verCheckCtx, verCheckCtxCancel := context.WithTimeout(ctx, versionCheckTimeout)
 	defer verCheckCtxCancel()
 
 	var latestVersion, currentVersion string
 	var err error
 	if latestVersion, currentVersion, err = versionCheck(verCheckCtx, stableDiffusionApiHost); err != nil {
-		return errorStr + ": " + err.Error(), true
+		return consts.ErrorStr + ": " + err.Error(), true
 	}
 
 	updateNeededOrError = currentVersion != latestVersion

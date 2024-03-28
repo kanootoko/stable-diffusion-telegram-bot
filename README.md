@@ -11,19 +11,18 @@ processed at a time.
 
 The bot uses the
 [Telegram Bot API](https://github.com/go-telegram-bot-api/telegram-bot-api).
-Rendered images are not saved on disk. Tested on Linux, but should be able
-to run on other operating systems.
+Rendered images are not saved on disk.
 
 ## Compiling
 
-You'll need Go installed on your computer. Install a recent package of `golang`.
-Then:
+You'll need Go installed on your computer. Install a recent package of [Go](https://go.dev).
+Then run:
 
 ```shell
-go install github.com/kanootoko/stable-diffusion-telegram-bot@latest
+go install github.com/kanootoko/stable-diffusion-telegram-bot/cmd/stable-diffusion-telegram-bot@latest
 ```
 
-This will typically install `stable-diffusion-telegram-bot` into `$HOME/go/bin`.
+This will typically install `stable-diffusion-telegram-bot` into `~/go/bin`.
 
 Or just enter `go build` in the cloned Git source repo directory.
 
@@ -51,41 +50,16 @@ the app's log, as it logs all incoming messages.
 
 All command line arguments can be set through OS environment variables.
 Note that using a command line argument overwrites a setting by the environment
-variable. Available OS environment variables are:
+variable. Available OS environment variables are listed in [.env example file](.env.example).
 
-- `BOT_TOKEN`
-- `STABLE_DIFFUSION_WEBUI_PATH`
-- `ALLOWED_USERIDS`
-- `ADMIN_USERIDS`
-- `ALLOWED_GROUPIDS`
-- `DELAYED_SD_START`
-- `DEFAULT_MODEL`
-- `DEFAULT_SAMPLER`
-- `DEFAULT_WIDTH`
-- `DEFAULT_HEIGHT`
-- `DEFAULT_WIDTH_SDXL`
-- `DEFAULT_HEIGHT_SDXL`
+## Bot operation
 
-## Supported commands
+Supported commands listed in [commands.txt file](commands.txt). You can also set 
+commands suggestions from Telegram using BotFather by feeding it with
+[commands file](./docs/resources/commands.txt) content.
 
-- `/sd` - render images using supplied prompt
-- `/cancel` - cancel ongoing request
-- `/models` - list available models
-- `/samplers` - list available samplers
-- `/embeddings` - list available embeddings
-- `/loras` - list available LoRAs
-- `/upscalers` - list available upscalers
-- `/vaes` - list available VAEs
-- `/smi` - get the output of nvidia-smi
-- `/help` - print help
-
-You can also use the `!` command character instead of `/`.
-
-You don't need to enter the `/sd` command if you send a prompt to the bot using
-a private chat.
-
-You can set commands promts from Telegram using BotFather by feeding it with
-[commands file](./resources/commands.txt) content.
+When sending message in private chat, any message which is not a command will be treated as
+a generation request.
 
 ### Setting render parameters
 

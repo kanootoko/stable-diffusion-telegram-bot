@@ -1,4 +1,4 @@
-package main
+package sdapi
 
 import (
 	"bytes"
@@ -11,14 +11,16 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/kanootoko/stable-diffusion-telegram-bot/internal/reqparams"
 )
 
-type sdAPIType struct {
-	sdHost string
+type SdAPIType struct {
+	SdHost string
 }
 
-func (a *sdAPIType) req(ctx context.Context, path, service string, postData []byte) (string, error) {
-	path, err := url.JoinPath(a.sdHost, "/sdapi/v1", path)
+func (a *SdAPIType) req(ctx context.Context, path, service string, postData []byte) (string, error) {
+	path, err := url.JoinPath(a.SdHost, "/sdapi/v1", path)
 	if err != nil {
 		return "", err
 	}
@@ -84,8 +86,8 @@ type RenderReq struct {
 	SendImages        bool                   `json:"send_images"`
 }
 
-func (a *sdAPIType) Render(ctx context.Context, p ReqParams, imageData ImageFileData) (imgs [][]byte, err error) {
-	params := p.(ReqParamsRender)
+func (a *SdAPIType) Render(ctx context.Context, p reqparams.ReqParams, _ []byte) (imgs [][]byte, err error) {
+	params := p.(reqparams.ReqParamsRender)
 
 	n_iter := int(math.Ceil(float64(params.NumOutputs) / float64(params.BatchSize)))
 
@@ -161,13 +163,13 @@ type UpscaleReq struct {
 	Image                          string  `json:"image"`
 }
 
-func (a *sdAPIType) Upscale(ctx context.Context, p ReqParams, imageData ImageFileData) (imgs [][]byte, err error) {
-	params := p.(ReqParamsUpscale)
+func (a *SdAPIType) Upscale(ctx context.Context, p reqparams.ReqParams, imageData []byte) (imgs [][]byte, err error) {
+	params := p.(reqparams.ReqParamsUpscale)
 
 	postData, err := json.Marshal(UpscaleReq{
 		UpscalingResize: params.Scale,
 		Upscaler1:       params.Upscaler,
-		Image:           base64.StdEncoding.EncodeToString(imageData.data),
+		Image:           base64.StdEncoding.EncodeToString(imageData),
 	})
 	if err != nil {
 		return nil, err
@@ -197,7 +199,7 @@ func (a *sdAPIType) Upscale(ctx context.Context, p ReqParams, imageData ImageFil
 	return [][]byte{unbased}, nil
 }
 
-func (a *sdAPIType) Interrupt(ctx context.Context) error {
+func (a *SdAPIType) Interrupt(ctx context.Context) error {
 	_, err := a.req(ctx, "/interrupt", "", []byte{})
 	if err != nil {
 		return err
@@ -205,7 +207,7 @@ func (a *sdAPIType) Interrupt(ctx context.Context) error {
 	return nil
 }
 
-func (a *sdAPIType) GetProgress(ctx context.Context) (progressPercent int, eta time.Duration, err error) {
+func (a *SdAPIType) GetProgress(ctx context.Context) (progressPercent int, eta time.Duration, err error) {
 	res, err := a.req(ctx, "/progress", "?skip_current_image=false", nil)
 	if err != nil {
 		return 0, 0, err
@@ -228,7 +230,7 @@ func (a *sdAPIType) GetProgress(ctx context.Context) (progressPercent int, eta t
 	return int(progressRes.Progress * 100), time.Duration(progressRes.ETA * float32(time.Second)), nil
 }
 
-func (a *sdAPIType) GetModels(ctx context.Context) (models []string, err error) {
+func (a *SdAPIType) GetModels(ctx context.Context) (models []string, err error) {
 	res, err := a.req(ctx, "/sd-models", "", nil)
 	if err != nil {
 		return nil, err
@@ -248,7 +250,7 @@ func (a *sdAPIType) GetModels(ctx context.Context) (models []string, err error) 
 	return
 }
 
-func (a *sdAPIType) GetSamplers(ctx context.Context) (samplers []string, err error) {
+func (a *SdAPIType) GetSamplers(ctx context.Context) (samplers []string, err error) {
 	res, err := a.req(ctx, "/samplers", "", nil)
 	if err != nil {
 		return nil, err
@@ -268,7 +270,7 @@ func (a *sdAPIType) GetSamplers(ctx context.Context) (samplers []string, err err
 	return
 }
 
-func (a *sdAPIType) GetEmbeddings(ctx context.Context) (embs []string, err error) {
+func (a *SdAPIType) GetEmbeddings(ctx context.Context) (embs []string, err error) {
 	res, err := a.req(ctx, "/embeddings", "", nil)
 	if err != nil {
 		return nil, err
@@ -288,7 +290,7 @@ func (a *sdAPIType) GetEmbeddings(ctx context.Context) (embs []string, err error
 	return
 }
 
-func (a *sdAPIType) GetLoRAs(ctx context.Context) (loras []string, err error) {
+func (a *SdAPIType) GetLoRAs(ctx context.Context) (loras []string, err error) {
 	res, err := a.req(ctx, "/loras", "", nil)
 	if err != nil {
 		return nil, err
@@ -308,7 +310,7 @@ func (a *sdAPIType) GetLoRAs(ctx context.Context) (loras []string, err error) {
 	return
 }
 
-func (a *sdAPIType) GetUpscalers(ctx context.Context) (upscalers []string, err error) {
+func (a *SdAPIType) GetUpscalers(ctx context.Context) (upscalers []string, err error) {
 	res, err := a.req(ctx, "/upscalers", "", nil)
 	if err != nil {
 		return nil, err
@@ -328,7 +330,7 @@ func (a *sdAPIType) GetUpscalers(ctx context.Context) (upscalers []string, err e
 	return
 }
 
-func (a *sdAPIType) GetVAEs(ctx context.Context) (vaes []string, err error) {
+func (a *SdAPIType) GetVAEs(ctx context.Context) (vaes []string, err error) {
 	res, err := a.req(ctx, "/sd-vae", "", nil)
 	if err != nil {
 		return nil, err
