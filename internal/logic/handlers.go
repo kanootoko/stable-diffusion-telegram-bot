@@ -127,7 +127,7 @@ func (c *CmdHandler) txt2img(ctx context.Context, msg *models.Message) {
 
 	var paramsLine *string
 	lines := strings.Split(text, "\n")
-	if len(lines) >= 2 {
+	if len(lines) > 1 {
 		reqParams.Prompt = lines[0]
 		reqParams.NegativePrompt = strings.Join(lines[1:], " ")
 		paramsLine = &reqParams.NegativePrompt
@@ -145,8 +145,11 @@ func (c *CmdHandler) txt2img(ctx context.Context, msg *models.Message) {
 			c.bot.SendReplyToMessage(ctx, msg, consts.EmptyRequestErrorStr)
 			return
 		}
-		reqParams.OriginalPromptText = fmt.Sprintf("%s\nParameters: %s", reqParams.OriginalPromptText[:firstCmdCharAt], reqParams.OriginalPromptText[firstCmdCharAt:])
 		*paramsLine = (*paramsLine)[:firstCmdCharAt]
+		if len(lines) > 1 {
+			firstCmdCharAt += len(lines[0]) + 1
+		}
+		reqParams.OriginalPromptText = fmt.Sprintf("%s\nParameters: %s", reqParams.OriginalPromptText[:firstCmdCharAt], reqParams.OriginalPromptText[firstCmdCharAt:])
 	}
 
 	reqParams.Prompt = strings.TrimSpace(reqParams.Prompt)

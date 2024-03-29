@@ -22,7 +22,7 @@ import (
 	"github.com/kanootoko/stable-diffusion-telegram-bot/internal/utils"
 )
 
-const processTimeout = 10 * time.Minute
+const processTimeout = 15 * time.Minute
 
 type ReqType int
 
