@@ -18,6 +18,6 @@ func (us UserServiceStatic) IsAdmin(userID int64) bool {
 
 func (us UserServiceStatic) IsUserAllowed(userID, chatID int64) bool {
 	return slices.Contains(us.allowedUserIDs, userID) ||
-		slices.Contains(us.allowedChatIDs, userID) ||
+		slices.Contains(us.allowedChatIDs, chatID) ||
 		us.IsAdmin(userID)
 }

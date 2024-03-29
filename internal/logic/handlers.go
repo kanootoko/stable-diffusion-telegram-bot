@@ -78,9 +78,16 @@ func (c *CmdHandler) adaptHandler(innerHandler func(context.Context, *models.Mes
 		}
 		fmt.Println()
 
-		if !c.us.IsUserAllowed(update.Message.From.ID, 0) {
+		if update.Message.ReplyToMessage != nil && update.Message.Text[0] != '/' {
+			fmt.Println("  skipping message as a reply to bot without a command")
+			return
+		}
+
+		if !c.us.IsUserAllowed(update.Message.From.ID, update.Message.Chat.ID) {
 			fmt.Println("  user not allowed, ignoring")
-			c.bot.SendReplyToMessage(ctx, update.Message, consts.UsageNotAllowedStr)
+			if update.Message.Text[0] == '/' || update.Message.From.ID == update.Message.Chat.ID {
+				c.bot.SendReplyToMessage(ctx, update.Message, consts.UsageNotAllowedStr)
+			}
 			return
 		}
 
