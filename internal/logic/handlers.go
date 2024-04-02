@@ -59,6 +59,9 @@ func (c *CmdHandler) GetDefaultHandler() bot.HandlerFunc {
 }
 
 func removeBotName(s string) string {
+	if s == "" {
+		return s
+	}
 	if s[0] == '/' {
 		spaceIndex := strings.Index(s, " ")
 		if spaceIndex == -1 {
@@ -78,7 +81,9 @@ func (c *CmdHandler) adaptHandler(innerHandler func(context.Context, *models.Mes
 		}
 		fmt.Println()
 
-		if update.Message.ReplyToMessage != nil && update.Message.Text[0] != '/' {
+		if update.Message.ReplyToMessage != nil &&
+			update.Message.Text != "" &&
+			update.Message.Text[0] != '/' {
 			fmt.Println("  skipping message as a reply to bot without a command")
 			return
 		}

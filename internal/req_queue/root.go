@@ -22,8 +22,6 @@ import (
 	"github.com/kanootoko/stable-diffusion-telegram-bot/internal/utils"
 )
 
-const processTimeout = 15 * time.Minute
-
 type ReqType int
 
 const (
@@ -182,6 +180,7 @@ type ReqQueue struct {
 	ctx            context.Context
 	entries        []ReqQueueEntry
 	processReqChan chan bool
+	ProcessTimeout time.Duration
 
 	currentEntry ReqQueueCurrentEntry
 }
@@ -460,7 +459,7 @@ func (q *ReqQueue) processor(sdApi *sdapi.SdAPIType) {
 			entry: &q.entries[0],
 		}
 		var processCtx context.Context
-		processCtx, q.currentEntry.ctxCancel = context.WithTimeout(q.ctx, processTimeout)
+		processCtx, q.currentEntry.ctxCancel = context.WithTimeout(q.ctx, q.ProcessTimeout)
 		q.mutex.Unlock()
 
 		var err error

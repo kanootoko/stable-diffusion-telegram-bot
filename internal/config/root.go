@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
-
-	"golang.org/x/exp/slices"
+	"time"
 )
 
 type GenerationDefaults struct {
@@ -41,30 +39,32 @@ func (d GenerationDefaults) String() string {
 	)
 }
 
-type ParamsType struct {
+type AppParams struct {
 	StableDiffusionApiHost string
 
 	BotToken        string
 	AllowedUserIDs  []int64
 	AdminUserIDs    []int64
 	AllowedGroupIDs []int64
+	ProcessTimeout  time.Duration
 
 	Defaults GenerationDefaults
 }
 
-func (p ParamsType) String() string {
+func (p AppParams) String() string {
 	return fmt.Sprintf(
-		"{sdAPI: %s, token: ...%s, admins: %v, allowedUsers: %v, allowedGroups: %v, defaults: %v}",
+		"{sdAPI: %s, token: ...%s, admins: %v, allowedUsers: %v, allowedGroups: %v, processTimeout: %v, defaults: %v}",
 		p.StableDiffusionApiHost,
 		p.BotToken[max(len(p.BotToken)-4, 0):],
 		p.AdminUserIDs,
 		p.AllowedUserIDs,
 		p.AllowedGroupIDs,
+		p.ProcessTimeout,
 		p.Defaults,
 	)
 }
 
-func (p *ParamsType) Init() error {
+func (p *AppParams) Init() error {
 
 	defaults := getDefaultsFromEnv()
 
@@ -76,6 +76,7 @@ func (p *ParamsType) Init() error {
 	flag.StringVar(&adminUserIDs, "admin-user-ids", defaults.AdminUserIDs, "admin telegram user ids")
 	var allowedGroupIDs string
 	flag.StringVar(&allowedGroupIDs, "allowed-group-ids", defaults.AllowedGroupIDs, "allowed telegram group ids")
+	flag.DurationVar(&p.ProcessTimeout, "process-timeout", defaults.ProcessTimeout, "maximum time before generation auto-cancel")
 	flag.StringVar(&p.Defaults.Model, "default-model", defaults.Model, "default model name")
 	flag.StringVar(&p.Defaults.Sampler, "default-sampler", defaults.Sampler, "default sampler name")
 	flag.IntVar(&p.Defaults.Cnt, "default-cnt", defaults.Cnt, "default images count")
@@ -95,55 +96,6 @@ func (p *ParamsType) Init() error {
 	if p.BotToken == "" {
 		return fmt.Errorf("bot token not set")
 	}
-
-	if allowedUserIDs == "" {
-		allowedUserIDs = os.Getenv("ALLOWED_USERIDS")
-	}
-	sa := strings.Split(allowedUserIDs, ",")
-	for _, idStr := range sa {
-		if idStr == "" {
-			continue
-		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("allowed user ids contains invalid user ID: " + idStr)
-		}
-		p.AllowedUserIDs = append(p.AllowedUserIDs, id)
-	}
-
-	if adminUserIDs == "" {
-		adminUserIDs = os.Getenv("ADMIN_USERIDS")
-	}
-	sa = strings.Split(adminUserIDs, ",")
-	for _, idStr := range sa {
-		if idStr == "" {
-			continue
-		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("admin ids contains invalid user ID: " + idStr)
-		}
-		p.AdminUserIDs = append(p.AdminUserIDs, id)
-		if !slices.Contains(p.AllowedUserIDs, id) {
-			p.AllowedUserIDs = append(p.AllowedUserIDs, id)
-		}
-	}
-
-	if allowedGroupIDs == "" {
-		allowedGroupIDs = os.Getenv("ALLOWED_GROUPIDS")
-	}
-	sa = strings.Split(allowedGroupIDs, ",")
-	for _, idStr := range sa {
-		if idStr == "" {
-			continue
-		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("allowed group ids contains invalid group ID: " + idStr)
-		}
-		p.AllowedGroupIDs = append(p.AllowedGroupIDs, id)
-	}
-
 	return nil
 }
 
@@ -163,6 +115,7 @@ type defaultsFromEnv struct {
 	AllowedUserIDs         string
 	AdminUserIDs           string
 	AllowedGroupIDs        string
+	ProcessTimeout         time.Duration
 }
 
 func getDefaultsFromEnv() (defaults defaultsFromEnv) {
@@ -276,6 +229,14 @@ func getDefaultsFromEnv() (defaults defaultsFromEnv) {
 	}
 	if value, isSet := os.LookupEnv("ADMIN_USER_IDS"); isSet {
 		defaults.AdminUserIDs = value
+	}
+	if value, isSet := os.LookupEnv("PROCESS_TIMEOUT"); isSet {
+		var err error
+		if defaults.ProcessTimeout, err = time.ParseDuration(value); err != nil {
+			defaults.ProcessTimeout = 15 * time.Minute
+		}
+	} else {
+		defaults.ProcessTimeout = 15 * time.Minute
 	}
 	return
 }

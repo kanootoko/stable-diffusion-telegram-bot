@@ -26,7 +26,7 @@ func main() {
 		utils.ReadEnvFile(".env")
 	}
 
-	var params config.ParamsType
+	var params config.AppParams
 
 	if err := params.Init(); err != nil {
 		fmt.Println("error:", err)
@@ -41,8 +41,13 @@ func main() {
 
 	sdApi := sdapi.SdAPIType{SdHost: params.StableDiffusionApiHost}
 
-	var reqQueue reqqueue.ReqQueue
-	cmdHandler := logic.NewCmdHandler(&sdApi, &reqQueue, params.Defaults, userservice.NewUserServiceStatic(params.AdminUserIDs, params.AllowedGroupIDs, params.AdminUserIDs))
+	reqQueue := reqqueue.ReqQueue{ProcessTimeout: params.ProcessTimeout}
+	cmdHandler := logic.NewCmdHandler(
+		&sdApi,
+		&reqQueue,
+		params.Defaults,
+		userservice.NewUserServiceStatic(params.AllowedUserIDs, params.AllowedGroupIDs, params.AdminUserIDs),
+	)
 
 	telegramBot, err := telegram.NewBot(params.BotToken, cmdHandler.GetDefaultHandler())
 
