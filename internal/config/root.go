@@ -4,7 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -95,6 +97,45 @@ func (p *AppParams) Init() error {
 	}
 	if p.BotToken == "" {
 		return fmt.Errorf("bot token not set")
+	}
+
+	sa := strings.Split(allowedUserIDs, ",")
+	for _, idStr := range sa {
+		if idStr == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("allowed user ids contains invalid user ID: " + idStr)
+		}
+		p.AllowedUserIDs = append(p.AllowedUserIDs, id)
+	}
+
+	sa = strings.Split(adminUserIDs, ",")
+	for _, idStr := range sa {
+		if idStr == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("admin ids contains invalid user ID: " + idStr)
+		}
+		p.AdminUserIDs = append(p.AdminUserIDs, id)
+		if !slices.Contains(p.AllowedUserIDs, id) {
+			p.AllowedUserIDs = append(p.AllowedUserIDs, id)
+		}
+	}
+
+	sa = strings.Split(allowedGroupIDs, ",")
+	for _, idStr := range sa {
+		if idStr == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("allowed group ids contains invalid group ID: " + idStr)
+		}
+		p.AllowedGroupIDs = append(p.AllowedGroupIDs, id)
 	}
 	return nil
 }
