@@ -75,6 +75,9 @@ func removeBotName(s string) string {
 
 func (c *CmdHandler) adaptHandler(innerHandler func(context.Context, *models.Message)) bot.HandlerFunc {
 	return func(ctx context.Context, _ *bot.Bot, update *models.Update) {
+		if update.Message == nil { // edited message is ignored
+			return
+		}
 		fmt.Print("msg from ", update.Message.From.Username, "#", update.Message.From.ID, ": ", update.Message.Text, "\n")
 		if update.Message.Chat.ID < 0 { // From group chat?
 			fmt.Print("  msg from group #", update.Message.Chat.ID)
