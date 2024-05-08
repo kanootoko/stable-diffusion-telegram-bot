@@ -91,9 +91,9 @@ func (c *CmdHandler) adaptHandler(innerHandler func(context.Context, *models.Mes
 			return
 		}
 
-		if !c.us.IsUserAllowed(update.Message.From.ID, update.Message.Chat.ID) {
+		if !c.us.IsUsageAllowed(update.Message.From.ID, update.Message.Chat.ID) {
 			fmt.Println("  user not allowed, ignoring")
-			if update.Message.Text[0] == '/' || update.Message.From.ID == update.Message.Chat.ID {
+			if update.Message.Text != "" && update.Message.Text[0] == '/' || update.Message.From.ID == update.Message.Chat.ID {
 				c.bot.SendReplyToMessage(ctx, update.Message, consts.UsageNotAllowedStr)
 			}
 			return
